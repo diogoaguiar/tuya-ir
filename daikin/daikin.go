@@ -23,7 +23,7 @@ const (
 
 // Operating modes.
 const (
-	ModeOff    = "off"
+	ModeOff     = "off"
 	ModeOffCool = "off_cool"
 	ModeOffHeat = "off_heat"
 	ModeOffFan  = "off_fan_only"
@@ -44,19 +44,26 @@ const (
 type modeParams struct {
 	byte5 byte // power/mode flags
 	byte6 byte // aux flag
-	byte7 byte // mode code
+	byte7 byte // mode code (bit 0 = power on)
 }
 
 var modes = map[string]modeParams{
-	ModeOff:     {0x43, 0x00, 0x00},
-	ModeOffCool: {0x53, 0x00, 0x00},
-	ModeOffHeat: {0x53, 0x00, 0x00},
-	ModeOffFan:  {0x43, 0x00, 0x00},
-	ModeOffDry:  {0x03, 0x04, 0x00},
-	ModeCool:    {0x53, 0x00, 0x21},
-	ModeHeat:    {0x53, 0x00, 0x11},
-	ModeFan:     {0x43, 0x00, 0x01},
-	ModeDry:     {0x03, 0x04, 0x71},
+	ModeOff:  {0x43, 0x00, 0x00},
+	ModeCool: {0x53, 0x00, 0x21},
+	ModeHeat: {0x53, 0x00, 0x11},
+	ModeFan:  {0x43, 0x00, 0x01},
+	ModeDry:  {0x03, 0x04, 0x71},
+}
+
+// offModeBase maps mode-specific off modes to their base active mode.
+// Mode-specific off commands preserve the mode group on the Daikin bus,
+// which is required for multi-split systems where the outdoor unit uses
+// the master unit's mode to determine the system operating mode.
+var offModeBase = map[string]string{
+	ModeOffCool: ModeCool,
+	ModeOffHeat: ModeHeat,
+	ModeOffFan:  ModeFan,
+	ModeOffDry:  ModeDry,
 }
 
 var fans = map[string]byte{
@@ -64,9 +71,6 @@ var fans = map[string]byte{
 	FanMedium: 0x36,
 	FanHigh:   0x56,
 }
-
-// preamble is the fixed first frame sent before every command.
-var preamble = []byte{0x11, 0xda, 0x17, 0x18, 0x04, 0x00, 0x1e}
 
 // Generate produces a Tuya-encoded IR code for the given AC parameters.
 // Returns a base64 string ready for Zigbee2MQTT ir_code_to_send.
@@ -76,28 +80,54 @@ func Generate(mode, fan string, temp int) (string, error) {
 		return "", err
 	}
 
+	// Mode-specific off commands use a different preamble (byte 4 = 0x14).
+	preamble := []byte{0x11, 0xda, 0x17, 0x18, 0x04, 0x00, 0x1e}
+	if _, ok := offModeBase[mode]; ok {
+		preamble[4] = 0x14
+		preamble[6] = 0x2e // recalculate checksum
+	}
+
 	timings := FrameToTimings(preamble, frame)
 	return codec.EncodeTuyaBase64(timings), nil
 }
 
 // EncodeFrame builds the 15-byte Daikin command frame.
 func EncodeFrame(mode, fan string, temp int) ([]byte, error) {
-	mp, ok := modes[mode]
-	if !ok {
-		return nil, fmt.Errorf("unknown mode: %q", mode)
+	// Mode-specific off: derive from the base active mode
+	baseMode, isSpecificOff := offModeBase[mode]
+
+	var mp modeParams
+	if isSpecificOff {
+		base, ok := modes[baseMode]
+		if !ok {
+			return nil, fmt.Errorf("unknown base mode for %q", mode)
+		}
+		// byte 5: set off flag (bit 5)
+		// byte 7: clear power bit (bit 0)
+		mp = modeParams{
+			byte5: base.byte5 | 0x20,
+			byte6: base.byte6,
+			byte7: base.byte7 &^ 0x01,
+		}
+	} else {
+		var ok bool
+		mp, ok = modes[mode]
+		if !ok {
+			return nil, fmt.Errorf("unknown mode: %q", mode)
+		}
 	}
 
 	fanByte, ok := fans[fan]
-	if !ok && mode != ModeOff && mode != ModeDry {
+	if !ok && mode != ModeOff && !isSpecificOff && mode != ModeDry {
 		return nil, fmt.Errorf("unknown fan speed: %q", fan)
 	}
 
 	// Determine temperature and fan bytes based on mode
 	var tempByte byte
-	switch mode {
-	case ModeOff, ModeOffCool, ModeOffHeat, ModeOffFan, ModeOffDry, ModeFan:
+	switch {
+	case mode == ModeOff || isSpecificOff || mode == ModeFan:
 		tempByte = 0x10 // fixed
-	case ModeDry:
+	case mode == ModeDry:
 		tempByte = 0x10 // dry ignores temp
 		fanByte = 0x56  // dry ignores fan
 	default:
@@ -107,17 +137,22 @@ func EncodeFrame(mode, fan string, temp int) ([]byte, error) {
 		tempByte = byte((temp - 9) * 2)
 	}
 
-	switch mode {
-	case ModeOff, ModeOffCool, ModeOffHeat, ModeOffFan, ModeOffDry:
+	if mode == ModeOff || isSpecificOff {
 		fanByte = 0x16 // fixed for off
+	}
+
+	// Byte 4: 0x10 for mode-specific off, 0x00 otherwise
+	var byte4 byte
+	if isSpecificOff {
+		byte4 = 0x10
 	}
 
 	frame := []byte{
 		0x11, 0xda, 0x17, 0x18, // header
-		0x00,      // byte 4
-		mp.byte5,  // byte 5: power/mode flags
-		mp.byte6,  // byte 6: aux flag
-		mp.byte7,  // byte 7: mode code
+		byte4,    // byte 4: mode-specific off flag
+		mp.byte5, // byte 5: power/mode flags
+		mp.byte6, // byte 6: aux flag
+		mp.byte7, // byte 7: mode code (bit 0 = power)
 		0x00, 0x00, // bytes 8-9
 		tempByte, // byte 10: temperature
 		fanByte,  // byte 11: fan speed

@@ -51,6 +51,31 @@ tuya-ir generate daikin --mode cool --fan high --temp 21 | \
 | `--fan` | `low`, `medium`, `high` (default: `low`) |
 | `--temp` | `16`-`32` (default: `23`, ignored for off/dry/fan_only) |
 
+### Mode-specific off (multi-split systems)
+
+In Daikin multi-split systems, the outdoor unit determines the operating mode (cool/heat) from the indoor units' bus state. A generic off command uses byte5=`0x43` (fan/off group), which causes the outdoor unit to drop to fan mode — other indoor units can then no longer cool or heat.
+
+Mode-specific off commands (`off_cool`, `off_heat`, etc.) preserve the mode group on the bus so other units can continue operating. The protocol differences from a generic off:
+
+| Byte | Generic off | Mode-specific off |
+|------|-------------|-------------------|
+| Frame 0, byte 4 | `0x04` | `0x14` (set bit 4) |
+| Frame 1, byte 4 | `0x00` | `0x10` (set bit 4) |
+| Frame 1, byte 5 | `0x43` | base mode byte5 \| `0x20` (set off flag) |
+| Frame 1, byte 7 | `0x00` | base mode byte7 & `0xFE` (clear power bit) |
+
+Byte 7 bit 0 is the power bit. Mode-specific off clears it while preserving the mode code:
+
+| Command | byte5 | byte7 | Derived from |
+|---------|-------|-------|--------------|
+| `off` | `0x43` | `0x00` | — |
+| `off_cool` | `0x73` | `0x20` | cool: `0x53`/`0x21` |
+| `off_heat` | `0x73` | `0x10` | heat: `0x53`/`0x11` |
+| `off_fan_only` | `0x63` | `0x00` | fan: `0x43`/`0x01` |
+| `off_dry` | `0x23` | `0x70` | dry: `0x03`/`0x71` |
+
+These map directly to SmartIR's `off_<mode>` command keys — SmartIR automatically sends the correct off command based on the current mode when the user turns off the AC.
+
 ## Development
 
 ```bash
