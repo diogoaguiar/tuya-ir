@@ -47,34 +47,59 @@ tuya-ir generate daikin --mode cool --fan high --temp 21 | \
 
 | Parameter | Values |
 |-----------|--------|
-| `--mode` | `off`, `off_cool`, `off_heat`, `off_fan_only`, `off_dry`, `cool`, `heat`, `fan_only`, `dry` |
+| `--mode` | `off`, `off_cool`, `off_heat`, `off_fan_only`, `off_dry`, `off_auto`, `cool`, `heat`, `fan_only`, `dry`, `auto` |
 | `--fan` | `low`, `medium`, `high` (default: `low`) |
 | `--temp` | `16`-`32` (default: `23`, ignored for off/dry/fan_only) |
 
+### Daikin IR protocol (FXAA63AUV1B)
+
+Two frames per transmission. Frame 0 is a 7-byte preamble, Frame 1 is the 15-byte command.
+
+**Frame 1 byte map:**
+
+| Byte | Field | Description |
+|------|-------|-------------|
+| 0-3 | Header | `11 da 17 18` (fixed) |
+| 4 | Extended flag | `0x00` standard, `0x10` for auto and mode-specific off |
+| 5 | Mode group | `0x43` fan/off, `0x53` cool/heat, `0x03` dry, `0x73` auto |
+| 6 | Aux flag | `0x00` usually, `0x04` for dry and auto |
+| 7 | Mode code | Bit 0 = power. `0x01`=fan, `0x11`=heat, `0x21`=cool, `0x31`=auto, `0x71`=dry |
+| 10 | Temperature | `(temp - 9) * 2` |
+| 11 | Fan speed | `0x16`=low, `0x36`=medium, `0x56`=high |
+| 14 | Checksum | `sum(bytes[0:14]) & 0xFF` |
+
+**All modes:**
+
+| Mode | byte4 | byte5 | byte6 | byte7 |
+|------|-------|-------|-------|-------|
+| off | `0x00` | `0x43` | `0x00` | `0x00` |
+| fan_only | `0x00` | `0x43` | `0x00` | `0x01` |
+| cool | `0x00` | `0x53` | `0x00` | `0x21` |
+| heat | `0x00` | `0x53` | `0x00` | `0x11` |
+| dry | `0x00` | `0x03` | `0x04` | `0x71` |
+| auto | `0x10` | `0x73` | `0x04` | `0x31` |
+
 ### Mode-specific off (multi-split systems)
 
-In Daikin multi-split systems, the outdoor unit determines the operating mode (cool/heat) from the indoor units' bus state. A generic off command uses byte5=`0x43` (fan/off group), which causes the outdoor unit to drop to fan mode — other indoor units can then no longer cool or heat.
+In Daikin multi-split systems, the outdoor unit determines the operating mode from the indoor units' bus state. A generic off uses byte5=`0x43` (fan/off group), causing the outdoor unit to drop to fan mode — other units can no longer cool or heat.
 
-Mode-specific off commands (`off_cool`, `off_heat`, etc.) preserve the mode group on the bus so other units can continue operating. The protocol differences from a generic off:
+Mode-specific off commands preserve the mode group. Derived from the base active mode:
+- **Byte 4**: set `0x10` (extended flag)
+- **Byte 5**: set bit 5 (`0x20`) — off flag
+- **Byte 7**: clear bit 0 — power off
 
-| Byte | Generic off | Mode-specific off |
-|------|-------------|-------------------|
-| Frame 0, byte 4 | `0x04` | `0x14` (set bit 4) |
-| Frame 1, byte 4 | `0x00` | `0x10` (set bit 4) |
-| Frame 1, byte 5 | `0x43` | base mode byte5 \| `0x20` (set off flag) |
-| Frame 1, byte 7 | `0x00` | base mode byte7 & `0xFE` (clear power bit) |
+| Command | byte4 | byte5 | byte7 | Derived from |
+|---------|-------|-------|-------|--------------|
+| `off` | `0x00` | `0x43` | `0x00` | — |
+| `off_cool` | `0x10` | `0x73` | `0x20` | cool |
+| `off_heat` | `0x10` | `0x73` | `0x10` | heat |
+| `off_fan_only` | `0x10` | `0x63` | `0x00` | fan |
+| `off_dry` | `0x10` | `0x23` | `0x70` | dry |
+| `off_auto` | `0x10` | `0x73` | `0x30` | auto |
 
-Byte 7 bit 0 is the power bit. Mode-specific off clears it while preserving the mode code:
+The preamble (frame 0) byte 4 mirrors the command byte 4: `0x04` normally, `0x14` when extended.
 
-| Command | byte5 | byte7 | Derived from |
-|---------|-------|-------|--------------|
-| `off` | `0x43` | `0x00` | — |
-| `off_cool` | `0x73` | `0x20` | cool: `0x53`/`0x21` |
-| `off_heat` | `0x73` | `0x10` | heat: `0x53`/`0x11` |
-| `off_fan_only` | `0x63` | `0x00` | fan: `0x43`/`0x01` |
-| `off_dry` | `0x23` | `0x70` | dry: `0x03`/`0x71` |
-
-These map directly to SmartIR's `off_<mode>` command keys — SmartIR automatically sends the correct off command based on the current mode when the user turns off the AC.
+SmartIR maps these to `off_<mode>` command keys and automatically sends the correct one when the user turns off.
 
 ## Development
 
@@ -87,8 +112,10 @@ make install  # Install to $GOPATH/bin
 ## Project structure
 
 ```
-codec/    - Tuya compression/encoding, Broadlink decoding
-convert/  - Broadlink-to-Tuya IR code conversion
-daikin/   - Daikin AC protocol encoder
-smartir/  - SmartIR JSON file handling
+cmd/tuya-ir/  - Main CLI tool
+cmd/decode/   - IR code decoder (Tuya base64 → protocol bytes)
+codec/        - Tuya compression/encoding, Broadlink decoding
+convert/      - Broadlink-to-Tuya IR code conversion
+daikin/       - Daikin AC protocol encoder
+smartir/      - SmartIR JSON file handling
 ```

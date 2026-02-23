@@ -29,7 +29,7 @@ const generateUsage = `Usage: tuya-ir generate daikin --mode <mode> [--fan <fan>
 
   Generates a Tuya-encoded IR code for a Daikin AC.
 
-  Modes: off, off_cool, off_heat, off_fan_only, off_dry, cool, heat, fan_only, dry
+  Modes: off, off_cool, off_heat, off_fan_only, off_dry, off_auto, cool, heat, fan_only, dry, auto
   Fan:   low, medium, high (default: low)
   Temp:  16-32 (default: 23, ignored for off/dry/fan_only)
 
