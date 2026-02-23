@@ -29,13 +29,18 @@ const generateUsage = `Usage: tuya-ir generate daikin --mode <mode> [--fan <fan>
 
   Generates a Tuya-encoded IR code for a Daikin AC.
 
-  Modes: off, cool, heat, fan_only, dry
+  Modes: off, off_cool, off_heat, off_fan_only, off_dry, cool, heat, fan_only, dry
   Fan:   low, medium, high (default: low)
   Temp:  16-32 (default: 23, ignored for off/dry/fan_only)
 
+  off_cool/off_heat: mode-specific off commands that preserve the cool/heat
+  mode group flag (byte5=0x53) for Daikin multi-split systems. Prevents the
+  outdoor unit from dropping to fan mode when the master unit turns off.
+
 Examples:
   tuya-ir generate daikin --mode cool --fan low --temp 23
-  tuya-ir generate daikin --mode off`
+  tuya-ir generate daikin --mode off
+  tuya-ir generate daikin --mode off_cool`
 
 func main() {
 	if len(os.Args) < 2 {

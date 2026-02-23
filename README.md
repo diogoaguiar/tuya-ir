@@ -34,6 +34,9 @@ tuya-ir generate daikin --mode cool --fan low --temp 23
 # Turn off
 tuya-ir generate daikin --mode off
 
+# Mode-specific off (for multi-split systems)
+tuya-ir generate daikin --mode off_cool
+
 # Pipe directly to MQTT
 tuya-ir generate daikin --mode cool --fan high --temp 21 | \
   mosquitto_pub -t 'zigbee2mqtt/IR Blaster/set' \
@@ -44,7 +47,7 @@ tuya-ir generate daikin --mode cool --fan high --temp 21 | \
 
 | Parameter | Values |
 |-----------|--------|
-| `--mode` | `off`, `cool`, `heat`, `fan_only`, `dry` |
+| `--mode` | `off`, `off_cool`, `off_heat`, `off_fan_only`, `off_dry`, `cool`, `heat`, `fan_only`, `dry` |
 | `--fan` | `low`, `medium`, `high` (default: `low`) |
 | `--temp` | `16`-`32` (default: `23`, ignored for off/dry/fan_only) |
 

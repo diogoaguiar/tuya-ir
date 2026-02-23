@@ -23,7 +23,11 @@ const (
 
 // Operating modes.
 const (
-	ModeOff     = "off"
+	ModeOff    = "off"
+	ModeOffCool = "off_cool"
+	ModeOffHeat = "off_heat"
+	ModeOffFan  = "off_fan_only"
+	ModeOffDry  = "off_dry"
 	ModeCool    = "cool"
 	ModeHeat    = "heat"
 	ModeFan     = "fan_only"
@@ -44,11 +48,15 @@ type modeParams struct {
 }
 
 var modes = map[string]modeParams{
-	ModeOff:  {0x43, 0x00, 0x00},
-	ModeCool: {0x53, 0x00, 0x21},
-	ModeHeat: {0x53, 0x00, 0x11},
-	ModeFan:  {0x43, 0x00, 0x01},
-	ModeDry:  {0x03, 0x04, 0x71},
+	ModeOff:     {0x43, 0x00, 0x00},
+	ModeOffCool: {0x53, 0x00, 0x00},
+	ModeOffHeat: {0x53, 0x00, 0x00},
+	ModeOffFan:  {0x43, 0x00, 0x00},
+	ModeOffDry:  {0x03, 0x04, 0x00},
+	ModeCool:    {0x53, 0x00, 0x21},
+	ModeHeat:    {0x53, 0x00, 0x11},
+	ModeFan:     {0x43, 0x00, 0x01},
+	ModeDry:     {0x03, 0x04, 0x71},
 }
 
 var fans = map[string]byte{
@@ -87,7 +95,7 @@ func EncodeFrame(mode, fan string, temp int) ([]byte, error) {
 	// Determine temperature and fan bytes based on mode
 	var tempByte byte
 	switch mode {
-	case ModeOff, ModeFan:
+	case ModeOff, ModeOffCool, ModeOffHeat, ModeOffFan, ModeOffDry, ModeFan:
 		tempByte = 0x10 // fixed
 	case ModeDry:
 		tempByte = 0x10 // dry ignores temp
@@ -99,7 +107,8 @@ func EncodeFrame(mode, fan string, temp int) ([]byte, error) {
 		tempByte = byte((temp - 9) * 2)
 	}
 
-	if mode == ModeOff {
+	switch mode {
+	case ModeOff, ModeOffCool, ModeOffHeat, ModeOffFan, ModeOffDry:
 		fanByte = 0x16 // fixed for off
 	}
 
