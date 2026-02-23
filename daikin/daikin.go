@@ -1,6 +1,6 @@
 // Package daikin generates Daikin AC IR codes from parameters.
 //
-// Supports the Daikin protocol used by BRC4C158 and compatible remotes.
+// Supports the Daikin protocol used by BRC4C160 and compatible remotes.
 // The protocol sends two frames: a 7-byte preamble and a 15-byte command
 // frame encoding power, mode, temperature, and fan speed.
 package daikin

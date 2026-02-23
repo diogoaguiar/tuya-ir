@@ -51,7 +51,7 @@ tuya-ir generate daikin --mode cool --fan high --temp 21 | \
 | `--fan` | `low`, `medium`, `high` (default: `low`) |
 | `--temp` | `16`-`32` (default: `23`, ignored for off/dry/fan_only) |
 
-### Daikin IR protocol (FXAA63AUV1B)
+### Daikin IR protocol (BRC4C160 remote / FXAA63AUV1B indoor unit)
 
 Two frames per transmission. Frame 0 is a 7-byte preamble, Frame 1 is the 15-byte command.
 
