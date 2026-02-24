@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/diogoaguiar/tuya-ir/convert"
+	"github.com/diogoaguiar/irx/format"
 )
 
 // File represents a SmartIR JSON device code file.
@@ -48,26 +48,34 @@ func (f *File) IsRaw() bool {
 	return f.CommandsEncoding() == "Raw"
 }
 
-// ConvertToTuya converts all Broadlink IR codes in the file to Tuya format.
-func (f *File) ConvertToTuya() error {
-	if !f.IsBroadlink() {
-		return fmt.Errorf("file is not in Broadlink format (commandsEncoding: %s)", f.CommandsEncoding())
-	}
-
+// Convert converts all IR codes in the file from one format to another.
+func (f *File) Convert(dec format.Decoder, enc format.Encoder) error {
 	commands, ok := f.raw["commands"].(map[string]interface{})
 	if !ok {
 		return fmt.Errorf("missing or invalid 'commands' field")
 	}
 
-	converted, err := convert.Commands(commands)
+	converted, err := convertCommands(commands, dec, enc)
 	if err != nil {
 		return fmt.Errorf("failed to convert commands: %w", err)
 	}
 
 	f.raw["commands"] = converted
+	return nil
+}
+
+// ConvertToTuya converts all Broadlink IR codes to Tuya format and updates metadata.
+func (f *File) ConvertToTuya(dec format.Decoder, enc format.Encoder) error {
+	if !f.IsBroadlink() {
+		return fmt.Errorf("file is not in Broadlink format (commandsEncoding: %s)", f.CommandsEncoding())
+	}
+
+	if err := f.Convert(dec, enc); err != nil {
+		return err
+	}
+
 	f.raw["commandsEncoding"] = "Raw"
 	f.raw["supportedController"] = "MQTT"
-
 	return nil
 }
 
@@ -90,4 +98,36 @@ func (f *File) WriteJSON(path string) error {
 // MarshalJSON returns the JSON representation of the file.
 func (f *File) MarshalJSON() ([]byte, error) {
 	return json.Marshal(f.raw)
+}
+
+// convertCommands recursively converts all string IR codes in a nested map.
+func convertCommands(commands map[string]interface{}, dec format.Decoder, enc format.Encoder) (map[string]interface{}, error) {
+	result := make(map[string]interface{})
+
+	for key, value := range commands {
+		switch v := value.(type) {
+		case string:
+			timings, err := dec.Decode(v)
+			if err != nil {
+				return nil, fmt.Errorf("failed to convert code for key '%s': %w", key, err)
+			}
+			encoded, err := enc.Encode(timings)
+			if err != nil {
+				return nil, fmt.Errorf("failed to encode code for key '%s': %w", key, err)
+			}
+			result[key] = encoded
+
+		case map[string]interface{}:
+			converted, err := convertCommands(v, dec, enc)
+			if err != nil {
+				return nil, err
+			}
+			result[key] = converted
+
+		default:
+			result[key] = v
+		}
+	}
+
+	return result, nil
 }

@@ -6,7 +6,9 @@ import (
 	"os"
 	"strconv"
 
-	"github.com/diogoaguiar/tuya-ir/daikin"
+	"github.com/diogoaguiar/irx/format/broadlink"
+	"github.com/diogoaguiar/irx/format/tuya"
+	"github.com/diogoaguiar/irx/protocol/daikin"
 	"github.com/diogoaguiar/tuya-ir/smartir"
 )
 
@@ -92,7 +94,7 @@ func cmdConvert(args []string) {
 		os.Exit(1)
 	}
 
-	if err := f.ConvertToTuya(); err != nil {
+	if err := f.ConvertToTuya(broadlink.Format{}, tuya.Format{}); err != nil {
 		fmt.Fprintf(os.Stderr, "Error converting: %v\n", err)
 		os.Exit(1)
 	}
@@ -172,9 +174,16 @@ func cmdGenerate(args []string) {
 		os.Exit(1)
 	}
 
-	code, err := daikin.Generate(mode, fan, temp)
+	timings, err := daikin.Generate(mode, fan, temp)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		os.Exit(1)
+	}
+
+	tuyaFmt := tuya.Format{}
+	code, err := tuyaFmt.Encode(timings)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error encoding: %v\n", err)
 		os.Exit(1)
 	}
 
